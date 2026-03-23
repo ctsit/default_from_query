@@ -1,0 +1,125 @@
+# Default From Query
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.?????.svg)](https://doi.org/10.5281/zenodo.?????)
+
+Default From Query is a REDCap External Module that allows REDCap fields to be auto-populated with values derived from SQL queries against REDCap's own database. Queries are defined by a system administrator at the project level and referenced by name from a field's action tag.
+
+## Prerequisites
+
+- REDCap >= 14.6.4
+- PHP >= 8.2.0
+
+## Installation
+
+- Obtain this module from the Consortium [REDCap Repo](https://redcap.vumc.edu/consortium/modules/index.php) from the control center.
+- Go to **Control Center > Manage External Modules** and enable Default From Query.
+
+- Enable the module for each project that needs it via the project's **Manage External Modules** page.
+
+## Usage
+
+### 1. Enable the module on the project
+
+Enable the module for the project via the project's **Manage External Modules** page.
+
+### 2. Define a query
+
+In the project's External Modules configuration for Default From Query, add one or more query entries. Each entry requires:
+
+| Field | Who can set it | Description |
+|-------|---------------|-------------|
+| **Query Name** | Any project administrator | A short identifier used to reference this query in action tags |
+| **SQL** | REDCap Admin only | A SQL statement that returns a single scalar value |
+| **Additional Project ID 1–3** (`pid1`, `pid2`, `pid3`) | Any project administrator | Optional project IDs for queries that need to reference data from other projects |
+
+### 3. Reference the query by name in a field's action tag
+
+In the Online Designer, add the following action tag to any field you want auto-populated:
+
+```
+@DEFAULT-FROM-QUERY='query_name'
+```
+
+where `query_name` matches the **Query Name** configured in project settings. When a user opens a data entry form for a record that has no existing data on that form, the module executes the associated query and injects the result as the field's default value.
+
+### Variable substitution in SQL
+
+Queries may reference the following placeholders, which are substituted with the current context before execution:
+
+| Placeholder | Substituted with |
+|-------------|-----------------|
+| `[record_id]` | The current record ID |
+| `[project_id]` | The current project ID |
+| `[field_name]` | The name of the field being populated |
+| `[data-table]` | The REDCap data table for the current project (e.g. `redcap_data`) |
+| `[pid1]`, `[pid2]`, `[pid3]` | The project ID configured in the corresponding additional project ID field |
+| `[data-table:pid1]`, `[data-table:pid2]`, `[data-table:pid3]` | The REDCap data table for the corresponding additional project |
+
+Example:
+
+```sql
+SELECT value
+FROM [data-table]
+WHERE project_id = [project_id]
+  AND record = [record_id]
+  AND field_name = [field_name]
+ORDER BY instance DESC
+LIMIT 1
+```
+
+#### Caveats
+
+- Do not enclose any of these substitions with quotes or the query will fail and return to no value.
+
+```sql
+SELECT value
+FROM [data-table]
+WHERE project_id = [project_id]
+  AND record = '[record_id]' -- this will fail!
+  AND field_name = '[field_name]' -- this will also fail!
+ORDER BY instance DESC
+LIMIT 1
+```
+
+- `record` and `field_name` _must_ be wrapped in quotes if you are _not_ using the substition value for that column value.
+
+```sql
+SELECT value
+FROM [data-table]
+WHERE project_id = [project_id]
+  AND record = [record_id]
+  AND field_name = 'some_other_field' -- Quotes are required in this context
+ORDER BY instance DESC
+LIMIT 1
+```
+
+- If your query needs to query multiple project_ids, record_ids or field_names, you will need to manage those differences as you write the query. The substition values will always be in the context of the project, field, and record of the form as it is opened on the data entry page. The pid1, pid2, and pid3 parameters will help you manage multiple projects. If the field name varies, you will need to hard-code that. 
+
+```sql
+select coalesce(max(max_visitnum) + 1, 1) as next_visitnum
+from (
+        (
+            select max(cast(value as SIGNED)) as max_visitnum
+            from [data-table]
+            where project_id = [project_id]
+                and field_name = [field_name]
+                and record = [record_id] -- when you need only the value provided by the substitution, you can use it.
+        )
+        union
+        (
+            select max(cast(value as SIGNED)) as max_visitnum
+            from [data-table:pid1] -- the data tables do not match so reference a different PID saved in the module configuration
+            where project_id = [pid1] -- the project_ids do not match so configure a different PID and use it here
+                and field_name = [field_name]
+                and record = [record_id]
+        )
+    ) as dummy;
+```
+
+### Testing
+
+A prebuilt test project, SQL queries, and a test procedure are available in [Testing Default From Query](./testing.md)
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).
