@@ -1,3 +1,7 @@
+# default_from_query 1.0.1 (released 2026-03-25)
+- Remove identifiers section from CITATION.cff (@pbchase)
+- Set version to 1.0.1 (@pbchase)
+
 # default_from_query 1.0.0 (released 2026-03-23)
 - Initial release (@pbchase)
 

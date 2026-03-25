@@ -54,9 +54,6 @@ keywords:
   - data management
   - "redcap repo"
   - "redcap external module"
-identifiers:
-  - type: doi
-    value: 10.5281/zenodo.?????
 license: Apache-2.0
-version: 1.0.0
-date-released: '2026-03-??'
+version: 1.0.1
+date-released: '2026-03-25'
