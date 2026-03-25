@@ -5,7 +5,7 @@ cff-version: 1.2.0
 title: REDCap Default From Query External Module
 message:
   If you use this software, please cite it using the metadata
-  in CITATION.cff or https://doi.org/10.5281/zenodo.?????
+  in CITATION.cff or https://doi.org/10.5281/zenodo.19225884
 type: software
 authors:
   - family-names: Chase
@@ -54,6 +54,9 @@ keywords:
   - data management
   - "redcap repo"
   - "redcap external module"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.19225884
 license: Apache-2.0
 version: 1.0.1
 date-released: '2026-03-25'

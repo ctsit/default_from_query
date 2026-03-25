@@ -1,6 +1,7 @@
 # default_from_query 1.0.1 (released 2026-03-25)
-- Remove identifiers section from CITATION.cff (@pbchase)
-- Set version to 1.0.1 (@pbchase)
+- Add DOI to CITATION.cff and README.md (@pbchase)
+- Set version to 1.0.1 and date-released in CITATION.cff (@pbchase)
+- Remove VERSION file (@pbchase)
 
 # default_from_query 1.0.0 (released 2026-03-23)
 - Initial release (@pbchase)
