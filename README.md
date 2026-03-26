@@ -94,7 +94,7 @@ ORDER BY instance DESC
 LIMIT 1
 ```
 
-- If your query needs to query multiple project ids, record ids or field names, you will need to manage those differences as you write the query. The substition values will always be in the context of the project, field, and record of the form as it is opened on the data entry page. References to up to three other projects may be specified via settings, but any further project ids or other field names will need to be hard-coded in the query. 
+- If your query needs to query multiple project ids, record ids or field names, you will need to manage those differences as you write the query. The substitution values will always be in the context of the project, field, and record of the form as it is opened on the data entry page. References to up to three other projects may be specified via settings, but any further project ids or other field names will need to be hard-coded in the query. 
 
 ```sql
 select coalesce(max(max_visitnum) + 1, 1) as next_visitnum
