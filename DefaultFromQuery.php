@@ -193,8 +193,8 @@ class DefaultFromQuery extends AbstractExternalModule
         if (!$safe) {
             return null;
         }
+        $this->query('START TRANSACTION READ ONLY', []);
         try {
-            $this->query('START TRANSACTION READ ONLY', []);
             $result = $this->query($sql, $params);
             $this->query('ROLLBACK', []);
             if (!$result) {
@@ -203,6 +203,7 @@ class DefaultFromQuery extends AbstractExternalModule
             $row = $result->fetch_row();
             return $row ? (string) $row[0] : null;
         } catch (\Throwable $e) {
+            $this->query('ROLLBACK', []);
             return null;
         }
     }
