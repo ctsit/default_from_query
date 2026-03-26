@@ -3,18 +3,18 @@ from (
         (
             select max(cast(value as SIGNED)) as max_value
             from [data-table]
-            where project_id = [project_id]
-                and field_name = [field_name]
-                and record = [record_id]
+            where project_id = [project-id]
+                and field_name = [field-name]
+                and record = [record-name]
         )
 
         union
 
         (
             select max(cast(value as SIGNED)) as max_value
-            from [data-table:pid1]
-            where project_id = [pid1]
-                and field_name = [field_name]
-                and record = [record_id]
+            from [data-table:pid-1]
+            where project_id = [pid-1]
+                and field_name = [field-name]
+                and record = [record-name]
         )
     ) as dummy

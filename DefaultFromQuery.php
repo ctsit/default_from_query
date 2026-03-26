@@ -16,19 +16,21 @@ use Records;
  */
 class DefaultFromQuery extends AbstractExternalModule
 {
+
     /**
      * @inheritdoc
      */
-    function redcap_every_page_top($project_id)
+    function redcap_data_entry_form_top($project_id, $record, $instrument, $event_id, $group_id, $repeat_instance)
     {
-        if (!$project_id) {
-            return;
-        }
-
-        if (PAGE == 'DataEntry/index.php' && !empty($_GET['id'])) {
-            if (!$this->currentFormHasData()) {
-                $this->setDefaultValues($project_id);
-            }
+        if ($record === null || !$this->currentFormHasData($record, $instrument, $event_id, $repeat_instance)) {
+            $this->setDefaultValues(
+                $project_id,
+                $record,
+                $instrument,
+                $event_id,
+                $group_id,
+                $repeat_instance,
+            );
         }
     }
 
@@ -40,15 +42,30 @@ class DefaultFromQuery extends AbstractExternalModule
      * of the @DEFAULT action tag so REDCap renders it as the field default.
      *
      * @param int $project_id
+     * @param string $record
+     * @param string $instrument
+     * @param int $event_id
+     * @param int $group_id
+     * @param int $repeat_instance
      */
-    function setDefaultValues($project_id)
+    function setDefaultValues($project_id, $record, $instrument, $event_id, $group_id, $repeat_instance)
     {
         global $Proj;
 
-        $fields = empty($_GET['page']) ? $Proj->metadata : $Proj->forms[$_GET['page']]['fields'];
+        // Support draft preview mode
+        $fields = $Proj->getFormFields($instrument);
+        $metadata = $Proj->getMetadata();
+        $draft_preview_enabled = ($GLOBALS["draft_preview_enabled"] ?? false);
+        $update_misc = function ($field, $value) use ($Proj, $draft_preview_enabled) {
+            if ($draft_preview_enabled) {
+                $Proj->metadata_temp[$field]['misc'] = $value;
+            } else {
+                $Proj->metadata[$field]['misc'] = $value;
+            }
+        };
 
-        foreach (array_keys($fields) as $field_name) {
-            $misc = $Proj->metadata[$field_name]['misc'];
+        foreach ($fields as $field_name) {
+            $misc = $metadata[$field_name]['misc'];
 
             $query_name = Form::getValueInQuotesActionTag($misc, '@DEFAULT-FROM-QUERY');
             if (empty($query_name)) {
@@ -60,18 +77,21 @@ class DefaultFromQuery extends AbstractExternalModule
                 continue;
             }
 
+            // Optional other project references
             $pids = [
-                'pid1' => $query['pid1'] ?? null,
-                'pid2' => $query['pid2'] ?? null,
-                'pid3' => $query['pid3'] ?? null,
+                'pid-1' => $query['pid1'] ?? null,
+                'pid-2' => $query['pid2'] ?? null,
+                'pid-3' => $query['pid3'] ?? null,
             ];
-            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, $_GET['id'], $pids);
+
+            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, $record, $group_id, $event_id, $repeat_instance, $pids);
+
             $value = $this->executeQuery($sql, $params);
             if ($value === null) {
                 continue;
             }
 
-            $Proj->metadata[$field_name]['misc'] = $this->overrideActionTag('@DEFAULT', $value, $misc);
+            $update_misc($field_name, $this->overrideActionTag('@DEFAULT', $value, $misc));
         }
     }
 
@@ -93,8 +113,8 @@ class DefaultFromQuery extends AbstractExternalModule
     }
 
     /**
-     * Substitutes [record_id], [project_id], and [field_name] placeholders in
-     * a SQL string with safe parameterized query markers.
+     * Substitutes smart variable placeholders in a SQL string with safe
+     * parameterized query markers.
      *
      * Each placeholder occurrence is replaced with a ? and the corresponding
      * value is appended to the returned params array in order, making the
@@ -102,39 +122,54 @@ class DefaultFromQuery extends AbstractExternalModule
      * placeholder is an exception: it is substituted directly as a table name
      * and cannot be bound as a parameter.
      *
-     * Supported placeholders: [record_id], [project_id], [field_name],
-     * [pid1], [pid2], [pid3], [data-table], [data-table:pid1],
-     * [data-table:pid2], [data-table:pid3].
+     * Supported placeholders: [project-id], [field-name], [record-name],
+     * [record-dag-id], [event-id], [current-instance], [pid-1], [pid-2],
+     * [pid-3], [data-table], [data-table:N], [data-table:pid-1],
+     * [data-table:pid-2], [data-table:pid-3].
      *
-     * @param string $sql        The raw SQL string containing placeholders.
-     * @param int    $project_id The current REDCap project ID.
-     * @param string $field_name The field name being processed.
-     * @param string $record_id  The current record ID (from $_GET['id']).
-     * @param array  $pids       Optional map of pid1/pid2/pid3 to project IDs.
+     * @param string $sql            The raw SQL string containing placeholders.
+     * @param int    $project_id     The current REDCap project ID.
+     * @param string $field_name     The field name being processed.
+     * @param string $record_name    The current record ID. Note: Not yet existing (i.e., new) records will have a record id of null.
+     * @param int    $record_dag_id  The DAG id.
+     * @param int    $event_id       The event id.
+     * @param int    $instance       The instance number.
+     * @param array  $pids           The array of other PIDs
      * @return array{0: string, 1: array} A tuple of [piped SQL, bound values].
      */
-    function pipeSqlVariables($sql, $project_id, $field_name, $record_id, $pids = [])
+    function pipeSqlVariables($sql, $project_id, $field_name, $record_name, $record_dag_id, $event_id, $instance, $pids)
     {
         // Table names cannot be bound parameters; substitute them directly.
-        $sql = str_replace('[data-table]', $this->getDataTable($project_id), $sql);
-        foreach (['pid1', 'pid2', 'pid3'] as $key) {
+        $sql = preg_replace_callback(
+            '/\[data-table(?::(\d+))?\]/',
+            function ($m) use ($project_id) {
+                $pid = isset($m[1]) && $m[1] !== '' ? (int)$m[1] : $project_id;
+                return $this->framework->getDataTable($pid);
+            },
+            $sql
+        );
+        foreach (['pid-1', 'pid-2', 'pid-3'] as $key) {
             if (!empty($pids[$key])) {
-                $sql = str_replace("[data-table:$key]", $this->getDataTable($pids[$key]), $sql);
+                $sql = str_replace("[data-table:$key]", $this->framework->getDataTable($pids[$key]), $sql);
             }
         }
 
         $map = [
-            'project_id' => $project_id,
-            'field_name' => $field_name,
-            'record_id'  => $record_id,
-            'pid1'       => $pids['pid1'] ?? null,
-            'pid2'       => $pids['pid2'] ?? null,
-            'pid3'       => $pids['pid3'] ?? null,
+            'project-id'       => $project_id,
+            'field-name'       => $field_name,
+            'record-name'      => $record_name,
+            'record-dag-id'    => $record_dag_id,
+            'event-id'         => $event_id,
+            'current-instance' => $instance,
+            'pid-1'            => $pids['pid-1'] ?? null,
+            'pid-2'            => $pids['pid-2'] ?? null,
+            'pid-3'            => $pids['pid-3'] ?? null,
         ];
+        $pattern = '/\[(' . implode('|', array_keys($map)) . ')\]/';
 
         $params = [];
         $piped = preg_replace_callback(
-            '/\[(project_id|field_name|record_id|pid1|pid2|pid3)\]/',
+            $pattern,
             function ($matches) use ($map, &$params) {
                 $params[] = $map[$matches[1]];
                 return '?';
@@ -154,12 +189,23 @@ class DefaultFromQuery extends AbstractExternalModule
      */
     function executeQuery($sql, $params = [])
     {
-        $result = $this->query($sql, $params);
-        if (!$result) {
+        $safe = $this->checkSafeQuery($sql);
+        if (!$safe) {
             return null;
         }
-        $row = $result->fetch_row();
-        return $row ? (string) $row[0] : null;
+        $this->query('START TRANSACTION READ ONLY', []);
+        try {
+            $result = $this->query($sql, $params);
+            $this->query('ROLLBACK', []);
+            if (!$result) {
+                return null;
+            }
+            $row = $result->fetch_row();
+            return $row ? (string) $row[0] : null;
+        } catch (\Throwable $e) {
+            $this->query('ROLLBACK', []);
+            return null;
+        }
     }
 
     /**
@@ -189,18 +235,286 @@ class DefaultFromQuery extends AbstractExternalModule
      *
      * Prevents overwriting existing record data with defaults.
      *
+     * @param string $record          The current record name.
+     * @param string $instrument      The current instrument/form name.
+     * @param int    $event_id        The current event ID.
+     * @param int    $repeat_instance The current repeat instance number.
      * @return bool TRUE if the form contains data, FALSE otherwise.
      */
-    function currentFormHasData()
+    function currentFormHasData($record, $instrument, $event_id, $repeat_instance)
     {
         global $double_data_entry, $user_rights;
 
-        $record = $_GET['id'];
         if ($double_data_entry && $user_rights['double_data'] != 0) {
             $record = $record . '--' . $user_rights['double_data'];
         }
 
-        return (bool) Records::formHasData($record, $_GET['page'], $_GET['event_id'], $_GET['instance']);
+        return (bool) Records::formHasData($record, $instrument, $event_id, $repeat_instance);
     }
 
+    /**
+     * Best-effort safety check for SQL expected to be read-only.
+     *
+     * IMPORTANT:
+     * - This is intentionally conservative.
+     * - False negatives are acceptable; false positives are not.
+     * - Still run accepted queries inside START TRANSACTION READ ONLY ... ROLLBACK.
+     * - This is not a full SQL parser.
+     */
+    function checkSafeQuery(string $sql): bool
+    {
+        $sql = trim($sql);
+        if ($sql === '') {
+            return false;
+        }
+
+        // Remove comments and string literals so keyword scanning is less error-prone.
+        $scan = $this->stripSqlStringsAndComments($sql);
+        $scan = trim($scan);
+
+        if ($scan === '') {
+            return false;
+        }
+
+        // Reject multi-statement input.
+        // We strip a single trailing semicolon and reject any remaining semicolon.
+        $scanNoTrailingSemicolon = preg_replace('/;\s*$/', '', $scan);
+        if (strpos($scanNoTrailingSemicolon, ';') !== false) {
+            return false;
+        }
+        $scan = $scanNoTrailingSemicolon;
+
+        // Normalize whitespace and lowercase for matching.
+        $norm = strtolower(preg_replace('/\s+/', ' ', $scan));
+        $normForStart = $this->normalizeLeadingGroupingParens($norm);
+
+        // Allow only clearly read-style top-level starts.
+        // Conservative on purpose. Add more only if you really need them.
+        if (!preg_match('/^(select|with|show|describe|desc|explain)\b/', $normForStart)) {
+            return false;
+        }
+
+        // EXPLAIN is only allowed for read-style statements.
+        // Reject EXPLAIN UPDATE/DELETE/INSERT/etc. even though EXPLAIN itself is non-writing,
+        // because the function's contract is "harmless read-like query".
+        if (preg_match('/^explain\b/', $normForStart)) {
+            $afterExplain = preg_replace('/^explain\s+/', '', $normForStart, 1);
+            $afterExplain = $this->normalizeLeadingGroupingParens($afterExplain);
+            if (!preg_match('/^(select|with|show|describe|desc)\b/', $afterExplain)) {
+                return false;
+            }
+        }
+
+        // Hard reject suspicious / non-harmless constructs anywhere.
+        $denyPatterns = [
+            // DML / write-like
+            '/\binsert\b/',
+            '/\bupdate\b/',
+            '/\bdelete\b/',
+            '/\breplace\b/',
+            '/\bupsert\b/',
+            '/\bmerge\b/',
+            '/\bload\s+data\b/',
+            '/\btruncate\b/',
+
+            // DDL
+            '/\bcreate\b/',
+            '/\balter\b/',
+            '/\bdrop\b/',
+            '/\brename\b/',
+            '/\bcomment\b/',
+            '/\brepair\b/',
+            '/\boptimize\b/',
+            '/\banalyze\b/',   // MariaDB ANALYZE statement, not EXPLAIN ANALYZE syntax
+            '/\bcheck\b/',
+            '/\bcache\s+index\b/',
+
+            // Transaction / locking / admin
+            '/\block\s+tables?\b/',
+            '/\bunlock\s+tables?\b/',
+            '/\bfor\s+update\b/',
+            '/\bfor\s+share\b/',
+            '/\block\s+in\s+share\s+mode\b/',
+            '/\bflush\b/',
+            '/\breset\b/',
+            '/\bset\s+transaction\b/',
+            '/\bstart\s+transaction\b/',
+            '/\bbegin\b/',
+            '/\bcommit\b/',
+            '/\brollback\b/',
+
+            // File / external effects
+            '/\binto\s+outfile\b/',
+            '/\binto\s+dumpfile\b/',
+
+            // Routines / dynamic SQL / eventing
+            '/\bcall\b/',
+            '/\bexecute\b/',
+            '/\bprepare\b/',
+            '/\bdeallocate\b/',
+            '/\bdo\b/',
+            '/\bsignal\b/',
+            '/\bresignal\b/',
+            '/\bhandler\b/'
+        ];
+
+        foreach ($denyPatterns as $pattern) {
+            if (preg_match($pattern, $norm)) {
+                return false;
+            }
+        }
+
+        // Reject user-variable assignment patterns like "@x :=".
+        if (preg_match('/@[\w$]+\s*:=/', $norm)) {
+            return false;
+        }
+
+        // Reject SELECT ... INTO @var / local var
+        // This is not a DB write, but it is a side effect.
+        if (preg_match('/\bselect\b.*\binto\b\s+(@|[a-z_][a-z0-9_]*)/is', $norm)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Removes SQL comments and string/backtick literals, replacing them with spaces.
+     * This avoids matching dangerous keywords that occur only inside strings/comments.
+     *
+     * Handles:
+     * - -- comment
+     * - # comment
+     * - /* block comment *\/
+     * - 'single quoted strings'
+     * - "double quoted strings"
+     * - `backtick identifiers`
+     */
+    function stripSqlStringsAndComments(string $sql): string
+    {
+        $len = strlen($sql);
+        $out = '';
+        $i = 0;
+
+        while ($i < $len) {
+            $ch = $sql[$i];
+            $next = ($i + 1 < $len) ? $sql[$i + 1] : '';
+
+            // -- comment (treat --<space> and --\n conservatively as comment start)
+            if ($ch === '-' && $next === '-') {
+                $third = ($i + 2 < $len) ? $sql[$i + 2] : '';
+                if ($third === '' || ctype_space($third)) {
+                    $out .= ' ';
+                    $i += 2;
+                    while ($i < $len && $sql[$i] !== "\n") {
+                        $i++;
+                    }
+                    continue;
+                }
+            }
+
+            // # comment
+            if ($ch === '#') {
+                $out .= ' ';
+                $i++;
+                while ($i < $len && $sql[$i] !== "\n") {
+                    $i++;
+                }
+                continue;
+            }
+
+            // /* block comment */
+            if ($ch === '/' && $next === '*') {
+                $out .= ' ';
+                $i += 2;
+                while ($i + 1 < $len && !($sql[$i] === '*' && $sql[$i + 1] === '/')) {
+                    $i++;
+                }
+                $i += 2; // skip closing */
+                continue;
+            }
+
+            // Single-quoted string
+            if ($ch === "'") {
+                $out .= ' ';
+                $i++;
+                while ($i < $len) {
+                    if ($sql[$i] === "\\") {
+                        $i += 2;
+                        continue;
+                    }
+                    if ($sql[$i] === "'") {
+                        // handle doubled single quote ''
+                        if ($i + 1 < $len && $sql[$i + 1] === "'") {
+                            $i += 2;
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            // Double-quoted string
+            if ($ch === '"') {
+                $out .= ' ';
+                $i++;
+                while ($i < $len) {
+                    if ($sql[$i] === "\\") {
+                        $i += 2;
+                        continue;
+                    }
+                    if ($sql[$i] === '"') {
+                        if ($i + 1 < $len && $sql[$i + 1] === '"') {
+                            $i += 2;
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            // Backtick identifier
+            if ($ch === '`') {
+                $out .= ' ';
+                $i++;
+                while ($i < $len) {
+                    if ($sql[$i] === '`') {
+                        if ($i + 1 < $len && $sql[$i + 1] === '`') {
+                            $i += 2;
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            $out .= $ch;
+            $i++;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Removes leading parentheses
+     * @param string $sql 
+     * @return string 
+     */
+    function normalizeLeadingGroupingParens(string $sql): string
+    {
+        $sql = ltrim($sql);
+        while (isset($sql[0]) && $sql[0] === '(') {
+            $sql = ltrim(substr($sql, 1));
+        }
+        return $sql;
+    }
 }

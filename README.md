@@ -30,7 +30,6 @@ In the project's External Modules configuration for Default From Query, add one 
 |-------|---------------|-------------|
 | **Query Name** | Any project administrator | A short identifier used to reference this query in action tags |
 | **SQL** | REDCap Admin only | A SQL statement that returns a single scalar value |
-| **Additional Project ID 1–3** (`pid1`, `pid2`, `pid3`) | Any project administrator | Optional project IDs for queries that need to reference data from other projects |
 
 ### 3. Reference the query by name in a field's action tag
 
@@ -44,56 +43,58 @@ where `query_name` matches the **Query Name** configured in project settings. Wh
 
 ### Variable substitution in SQL
 
-Queries may reference the following placeholders, which are substituted with the current context before execution:
+Queries may reference the following **Smart Variables**, which are substituted with the current context before execution:
 
 | Placeholder | Substituted with |
 |-------------|-----------------|
-| `[record_id]` | The current record ID |
-| `[project_id]` | The current project ID |
-| `[field_name]` | The name of the field being populated |
-| `[data-table]` | The REDCap data table for the current project (e.g. `redcap_data`) |
-| `[pid1]`, `[pid2]`, `[pid3]` | The project ID configured in the corresponding additional project ID field |
-| `[data-table:pid1]`, `[data-table:pid2]`, `[data-table:pid3]` | The REDCap data table for the corresponding additional project |
+| `[project-id]` | The current project ID |
+| `[field-name]` | The name of the field being populated |
+| `[record-name]` | The current record ID (Note: For not-yet-saved records, the record ID will be `null`) |
+| `[record-dag-id]` | The data access group id of the record |
+| `[event-id]` | The current event id |
+| `[current-instance]` | The current instance number |
+| `[data-table]` | The REDCap data table for the current project (e.g. `redcap_data`). Data tables for other projects may be referenced by using the syntax `[data-table:pid]` where `pid` is a literal project ID or `pid-1`, `pid-2`, or `pid-3`, referencing the 1st, 2nd, or 3rd additional project ID set in the module settings for the query |
+| `[pid-1]`, `[pid-2]`, `[pid-3]` | The project ID configured in the corresponding additional project ID field |
 
 Example:
 
 ```sql
 SELECT value
 FROM [data-table]
-WHERE project_id = [project_id]
-  AND record = [record_id]
-  AND field_name = [field_name]
+WHERE project_id = [project-id]
+  AND record = [record-name]
+  AND field_name = [field-name]
 ORDER BY instance DESC
 LIMIT 1
 ```
 
 #### Caveats
 
-- Do not enclose any of these substitions with quotes or the query will fail and return to no value.
+- Do not enclose any of these substitutions with quotes or the query will fail and return no value.
 
 ```sql
 SELECT value
 FROM [data-table]
-WHERE project_id = [project_id]
-  AND record = '[record_id]' -- this will fail!
-  AND field_name = '[field_name]' -- this will also fail!
+WHERE project_id = [project-id]
+  AND record = '[record-name]' -- this will fail!
+  AND field_name = '[field-name]' -- this will also fail!
 ORDER BY instance DESC
 LIMIT 1
 ```
 
-- `record` and `field_name` _must_ be wrapped in quotes if you are _not_ using the substition value for that column value.
+- Values for `record` and `field_name` _must_ be wrapped in quotes if you are _not_ using the substitution value for that column value.
 
 ```sql
 SELECT value
 FROM [data-table]
-WHERE project_id = [project_id]
-  AND record = [record_id]
+WHERE project_id = [project-id]
+  AND record = [record-name]
   AND field_name = 'some_other_field' -- Quotes are required in this context
 ORDER BY instance DESC
 LIMIT 1
 ```
 
-- If your query needs to query multiple project_ids, record_ids or field_names, you will need to manage those differences as you write the query. The substition values will always be in the context of the project, field, and record of the form as it is opened on the data entry page. The pid1, pid2, and pid3 parameters will help you manage multiple projects. If the field name varies, you will need to hard-code that. 
+- If your query needs to query multiple project ids, record ids or field names, you will need to manage those differences as you write the query. The substitution values will always be in the context of the project, field, and record of the form as it is opened on the data entry page. References to up to three other projects may be specified via settings, but any further project ids or other field names will need to be hard-coded in the query. 
 
 ```sql
 select coalesce(max(max_visitnum) + 1, 1) as next_visitnum
@@ -101,24 +102,48 @@ from (
         (
             select max(cast(value as SIGNED)) as max_visitnum
             from [data-table]
-            where project_id = [project_id]
-                and field_name = [field_name]
-                and record = [record_id] -- when you need only the value provided by the substitution, you can use it.
+            where project_id = [project-id]
+                and field_name = [field-name]
+                and record = [record-name] -- when you need only the value provided by the substitution, you can use it.
         )
         union
         (
             select max(cast(value as SIGNED)) as max_visitnum
-            from [data-table:pid1] -- the data tables do not match so reference a different PID saved in the module configuration
-            where project_id = [pid1] -- the project_ids do not match so configure a different PID and use it here
-                and field_name = [field_name]
-                and record = [record_id]
+            from [data-table:pid-1] -- the data tables do not match so use a placeholder (set in module settings; alternatively, hard-code as, e.g., [data-table:123])
+            where project_id = [pid-1] -- the project_ids do not match so use a placeholder (set in module settings; alternatively, hard-code the project id)
+                and field_name = 'some_other_field'
+                and record = [record-name] --- the record name matches the one in the current project
         )
     ) as dummy;
 ```
 
+#### Draft Preview Mode
+
+This module supports draft preview mode, but data retrieval through SQL queries is of course limited to values that are actually stored in the data table.
+
 ### Testing
 
 A prebuilt test project, SQL queries, and a test procedure are available in [Testing Default From Query](./testing.md)
+
+## Upgrading
+
+### Breaking changes in v2.0.0
+
+The smart variable placeholders used in SQL queries were renamed in v2.0.0. If you have existing queries using the old names, update them before upgrading:
+
+| Old placeholder | New placeholder |
+|-----------------|-----------------|
+| `[project_id]`  | `[project-id]`  |
+| `[record_id]`   | `[record-name]` |
+| `[field_name]`  | `[field-name]`  |
+| `[pid1]`        | `[pid-1]`       |
+| `[pid2]`        | `[pid-2]`       |
+| `[pid3]`        | `[pid-3]`       |
+| `[data-table:pid1]` | `[data-table:pid-1]` |
+| `[data-table:pid2]` | `[data-table:pid-2]` |
+| `[data-table:pid3]` | `[data-table:pid-3]` |
+
+Queries using old placeholder names will silently produce no value after upgrading to v2.0.0.
 
 ## License
 

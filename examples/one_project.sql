@@ -3,8 +3,8 @@ from (
         (
             select max(cast(value as SIGNED)) as max_value
             from [data-table]
-            where project_id = [project_id]
-                and field_name = [field_name]
-                and record = [record_id]
+            where project_id = [project-id]
+                and field_name = [field-name]
+                and record = [record-name]
         )
     ) as dummy

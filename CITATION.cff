@@ -38,6 +38,10 @@ authors:
     given-names: Michael
     affiliation: University of Florida
     orcid: https://orcid.org/0000-0002-5790-4268
+  - given-names: Günther A.
+    family-names: Rezniczek
+    affiliation: UK Ruhr-Universität Bochum | Marien Hospital Herne
+    orcid: 'https://orcid.org/0000-0002-0852-6002'
 repository-code:
   https://github.com/ctsit/default_from_query/
 url:
