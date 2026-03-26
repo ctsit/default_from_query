@@ -154,12 +154,23 @@ class DefaultFromQuery extends AbstractExternalModule
      */
     function executeQuery($sql, $params = [])
     {
-        $result = $this->query($sql, $params);
-        if (!$result) {
+        $safe = $this->checkSafeQuery($sql);
+        if (!$safe) {
             return null;
         }
-        $row = $result->fetch_row();
-        return $row ? (string) $row[0] : null;
+        try {
+            $this->query('START TRANSACTION READ ONLY', []);
+            $result = $this->query($sql, $params);
+            $this->query('ROLLBACK', []);
+            if (!$result) {
+                return null;
+            }
+            $row = $result->fetch_row();
+            return $row ? (string) $row[0] : null;
+        }
+        catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -203,4 +214,269 @@ class DefaultFromQuery extends AbstractExternalModule
         return (bool) Records::formHasData($record, $_GET['page'], $_GET['event_id'], $_GET['instance']);
     }
 
+    /**
+     * Best-effort safety check for SQL expected to be read-only.
+     *
+     * IMPORTANT:
+     * - This is intentionally conservative.
+     * - False negatives are acceptable; false positives are not.
+     * - Still run accepted queries inside START TRANSACTION READ ONLY ... ROLLBACK.
+     * - This is not a full SQL parser.
+     */
+    function checkSafeQuery(string $sql): bool
+    {
+        $sql = trim($sql);
+        if ($sql === '') {
+            return false;
+        }
+
+        // Remove comments and string literals so keyword scanning is less error-prone.
+        $scan = $this->stripSqlStringsAndComments($sql);
+        $scan = trim($scan);
+
+        if ($scan === '') {
+            return false;
+        }
+
+        // Reject multi-statement input.
+        // We strip a single trailing semicolon and reject any remaining semicolon.
+        $scanNoTrailingSemicolon = preg_replace('/;\s*$/', '', $scan);
+        if (strpos($scanNoTrailingSemicolon, ';') !== false) {
+            return false;
+        }
+        $scan = $scanNoTrailingSemicolon;
+
+        // Normalize whitespace and lowercase for matching.
+        $norm = strtolower(preg_replace('/\s+/', ' ', $scan));
+        $normForStart = $this->normalizeLeadingGroupingParens($norm);
+
+        // Allow only clearly read-style top-level starts.
+        // Conservative on purpose. Add more only if you really need them.
+        if (!preg_match('/^(select|with|show|describe|desc|explain)\b/', $normForStart)) {
+            return false;
+        }
+
+        // EXPLAIN is only allowed for read-style statements.
+        // Reject EXPLAIN UPDATE/DELETE/INSERT/etc. even though EXPLAIN itself is non-writing,
+        // because the function's contract is "harmless read-like query".
+        if (preg_match('/^explain\b/', $normForStart)) {
+            $afterExplain = preg_replace('/^explain\s+/', '', $normForStart, 1);
+            $afterExplain = $this->normalizeLeadingGroupingParens($afterExplain);
+            if (!preg_match('/^(select|with|show|describe|desc)\b/', $afterExplain)) {
+                return false;
+            }
+        }
+
+        // Hard reject suspicious / non-harmless constructs anywhere.
+        $denyPatterns = [
+            // DML / write-like
+            '/\binsert\b/',
+            '/\bupdate\b/',
+            '/\bdelete\b/',
+            '/\breplace\b/',
+            '/\bupsert\b/',
+            '/\bmerge\b/',
+            '/\bload\s+data\b/',
+            '/\btruncate\b/',
+
+            // DDL
+            '/\bcreate\b/',
+            '/\balter\b/',
+            '/\bdrop\b/',
+            '/\brename\b/',
+            '/\bcomment\b/',
+            '/\brepair\b/',
+            '/\boptimize\b/',
+            '/\banalyze\b/',   // MariaDB ANALYZE statement, not EXPLAIN ANALYZE syntax
+            '/\bcheck\b/',
+            '/\bcache\s+index\b/',
+
+            // Transaction / locking / admin
+            '/\block\s+tables?\b/',
+            '/\bunlock\s+tables?\b/',
+            '/\bfor\s+update\b/',
+            '/\bfor\s+share\b/',
+            '/\block\s+in\s+share\s+mode\b/',
+            '/\bflush\b/',
+            '/\breset\b/',
+            '/\bset\s+transaction\b/',
+            '/\bstart\s+transaction\b/',
+            '/\bbegin\b/',
+            '/\bcommit\b/',
+            '/\brollback\b/',
+
+            // File / external effects
+            '/\binto\s+outfile\b/',
+            '/\binto\s+dumpfile\b/',
+
+            // Routines / dynamic SQL / eventing
+            '/\bcall\b/',
+            '/\bexecute\b/',
+            '/\bprepare\b/',
+            '/\bdeallocate\b/',
+            '/\bdo\b/',
+            '/\bsignal\b/',
+            '/\bresignal\b/',
+            '/\bhandler\b/'
+        ];
+
+        foreach ($denyPatterns as $pattern) {
+            if (preg_match($pattern, $norm)) {
+                return false;
+            }
+        }
+
+        // Reject user-variable assignment patterns like "@x :=".
+        if (preg_match('/@[\w$]+\s*:=/', $norm)) {
+            return false;
+        }
+
+        // Reject SELECT ... INTO @var / local var
+        // This is not a DB write, but it is a side effect.
+        if (preg_match('/\bselect\b.*\binto\b\s+(@|[a-z_][a-z0-9_]*)/is', $norm)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Removes SQL comments and string/backtick literals, replacing them with spaces.
+     * This avoids matching dangerous keywords that occur only inside strings/comments.
+     *
+     * Handles:
+     * - -- comment
+     * - # comment
+     * - /* block comment *\/
+     * - 'single quoted strings'
+     * - "double quoted strings"
+     * - `backtick identifiers`
+     */
+    function stripSqlStringsAndComments(string $sql): string
+    {
+        $len = strlen($sql);
+        $out = '';
+        $i = 0;
+
+        while ($i < $len) {
+            $ch = $sql[$i];
+            $next = ($i + 1 < $len) ? $sql[$i + 1] : '';
+
+            // -- comment (treat --<space> and --\n conservatively as comment start)
+            if ($ch === '-' && $next === '-') {
+                $third = ($i + 2 < $len) ? $sql[$i + 2] : '';
+                if ($third === '' || ctype_space($third)) {
+                    $out .= ' ';
+                    $i += 2;
+                    while ($i < $len && $sql[$i] !== "\n") {
+                        $i++;
+                    }
+                    continue;
+                }
+            }
+
+            // # comment
+            if ($ch === '#') {
+                $out .= ' ';
+                $i++;
+                while ($i < $len && $sql[$i] !== "\n") {
+                    $i++;
+                }
+                continue;
+            }
+
+            // /* block comment */
+            if ($ch === '/' && $next === '*') {
+                $out .= ' ';
+                $i += 2;
+                while ($i + 1 < $len && !($sql[$i] === '*' && $sql[$i + 1] === '/')) {
+                    $i++;
+                }
+                $i += 2; // skip closing */
+                continue;
+            }
+
+            // Single-quoted string
+            if ($ch === "'") {
+                $out .= ' ';
+                $i++;
+                while ($i < $len) {
+                    if ($sql[$i] === "\\") {
+                        $i += 2;
+                        continue;
+                    }
+                    if ($sql[$i] === "'") {
+                        // handle doubled single quote ''
+                        if ($i + 1 < $len && $sql[$i + 1] === "'") {
+                            $i += 2;
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            // Double-quoted string
+            if ($ch === '"') {
+                $out .= ' ';
+                $i++;
+                while ($i < $len) {
+                    if ($sql[$i] === "\\") {
+                        $i += 2;
+                        continue;
+                    }
+                    if ($sql[$i] === '"') {
+                        if ($i + 1 < $len && $sql[$i + 1] === '"') {
+                            $i += 2;
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            // Backtick identifier
+            if ($ch === '`') {
+                $out .= ' ';
+                $i++;
+                while ($i < $len) {
+                    if ($sql[$i] === '`') {
+                        if ($i + 1 < $len && $sql[$i + 1] === '`') {
+                            $i += 2;
+                            continue;
+                        }
+                        $i++;
+                        break;
+                    }
+                    $i++;
+                }
+                continue;
+            }
+
+            $out .= $ch;
+            $i++;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Removes leading parentheses
+     * @param string $sql 
+     * @return string 
+     */
+    function normalizeLeadingGroupingParens(string $sql): string
+    {
+        $sql = ltrim($sql);
+        while (isset($sql[0]) && $sql[0] === '(') {
+            $sql = ltrim(substr($sql, 1));
+        }
+        return $sql;
+    }
 }
