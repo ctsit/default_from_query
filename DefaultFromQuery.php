@@ -79,9 +79,9 @@ class DefaultFromQuery extends AbstractExternalModule
 
             // Optional other project references
             $pids = [
-                'pid1' => $query['pid1'] ?? null,
-                'pid2' => $query['pid2'] ?? null,
-                'pid3' => $query['pid3'] ?? null,
+                'pid-1' => $query['pid1'] ?? null,
+                'pid-2' => $query['pid2'] ?? null,
+                'pid-3' => $query['pid3'] ?? null,
             ];
 
             [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, $record, $group_id, $event_id, $repeat_instance, $pids);
@@ -160,9 +160,9 @@ class DefaultFromQuery extends AbstractExternalModule
             'record-dag-id'    => $record_dag_id,
             'event-id'         => $event_id,
             'current-instance' => $instance,
-            'pid-1'            => $pids[0] ?? null,
-            'pid-2'            => $pids[1] ?? null,
-            'pid-3'            => $pids[2] ?? null,
+            'pid-1'            => $pids['pid-1'] ?? null,
+            'pid-2'            => $pids['pid-2'] ?? null,
+            'pid-3'            => $pids['pid-3'] ?? null,
         ];
         $pattern = '/\[(' . implode('|', array_keys($map)) . ')\]/';
 
