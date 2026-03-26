@@ -49,7 +49,7 @@ Queries may reference the following **Smart Variables**, which are substituted w
 |-------------|-----------------|
 | `[project-id]` | The current project ID |
 | `[field-name]` | The name of the field being populated |
-| `[record-name]` | The current record ID (Note: For yet unsaved records, the record ID will be `null`) |
+| `[record-name]` | The current record ID (Note: For not-yet-saved records, the record ID will be `null`) |
 | `[record-dag-id]` | The data access group id of the record |
 | `[event-id]` | The current event id |
 | `[current-instance]` | The current instance number |
@@ -70,7 +70,7 @@ LIMIT 1
 
 #### Caveats
 
-- Do not enclose any of these substitions with quotes or the query will fail and return to no value.
+- Do not enclose any of these substitutions with quotes or the query will fail and return no value.
 
 ```sql
 SELECT value
@@ -127,9 +127,9 @@ A prebuilt test project, SQL queries, and a test procedure are available in [Tes
 
 ## Upgrading
 
-### Breaking changes in v1.0.0
+### Breaking changes in v2.0.0
 
-The smart variable placeholders used in SQL queries were renamed in v1.0.0. If you have existing queries using the old names, update them before upgrading:
+The smart variable placeholders used in SQL queries were renamed in v2.0.0. If you have existing queries using the old names, update them before upgrading:
 
 | Old placeholder | New placeholder |
 |-----------------|-----------------|
@@ -143,7 +143,7 @@ The smart variable placeholders used in SQL queries were renamed in v1.0.0. If y
 | `[data-table:pid2]` | `[data-table:pid-2]` |
 | `[data-table:pid3]` | `[data-table:pid-3]` |
 
-Queries using old placeholder names will silently produce no value after upgrading.
+Queries using old placeholder names will silently produce no value after upgrading to v2.0.0.
 
 ## License
 
