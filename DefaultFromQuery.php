@@ -22,7 +22,7 @@ class DefaultFromQuery extends AbstractExternalModule
      */
     function redcap_data_entry_form_top($project_id, $record, $instrument, $event_id, $group_id, $repeat_instance)
     {
-        if ($record === null || !$this->currentFormHasData()) {
+        if ($record === null || !$this->currentFormHasData($record, $instrument, $event_id, $repeat_instance)) {
             $this->setDefaultValues(
                 $project_id,
                 $record,
@@ -233,18 +233,21 @@ class DefaultFromQuery extends AbstractExternalModule
      *
      * Prevents overwriting existing record data with defaults.
      *
+     * @param string $record          The current record name.
+     * @param string $instrument      The current instrument/form name.
+     * @param int    $event_id        The current event ID.
+     * @param int    $repeat_instance The current repeat instance number.
      * @return bool TRUE if the form contains data, FALSE otherwise.
      */
-    function currentFormHasData()
+    function currentFormHasData($record, $instrument, $event_id, $repeat_instance)
     {
         global $double_data_entry, $user_rights;
 
-        $record = $_GET['id'];
         if ($double_data_entry && $user_rights['double_data'] != 0) {
             $record = $record . '--' . $user_rights['double_data'];
         }
 
-        return (bool) Records::formHasData($record, $_GET['page'], $_GET['event_id'], $_GET['instance']);
+        return (bool) Records::formHasData($record, $instrument, $event_id, $repeat_instance);
     }
 
     /**
