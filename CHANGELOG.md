@@ -1,3 +1,22 @@
+# default_from_query 2.0.0 (released 2026-03-26)
+
+## Breaking changes
+- Rename smart variable placeholders to use hyphens instead of underscores: `[project_id]` → `[project-id]`, `[record_id]` → `[record-name]`, `[field_name]` → `[field-name]`, `[pid1]`/`[pid2]`/`[pid3]` → `[pid-1]`/`[pid-2]`/`[pid-3]`, `[data-table:pid1]`/`[data-table:pid2]`/`[data-table:pid3]` → `[data-table:pid-1]`/`[data-table:pid-2]`/`[data-table:pid-3]` (@pbchase, @grezniczek)
+
+## Enhancements
+- Add read-only scanner to detect and reject queries that attempt to write to the database (@grezniczek)
+- Add smart variable placeholders for `[record-dag-id]`, `[event-id]`, and `[current-instance]` (@grezniczek)
+- Always issue rollback after query execution (@grezniczek)
+
+## Bug fixes
+- Fix pid key mismatch so `[pid-1]`/`[pid-2]`/`[pid-3]` substitution works (@pbchase)
+- Replace `$_GET` usage in `currentFormHasData` with hook parameters (@pbchase)
+- Fix stale docblock, inconsistent `getDataTable` call, and README typo (@pbchase)
+
+## Other
+- Add note/limitation regarding draft preview mode (@grezniczek)
+- Add author Günther Rezniczek to CITATION.cff (@grezniczek)
+
 # default_from_query 1.0.1 (released 2026-03-25)
 - Add DOI to CITATION.cff and README.md (@pbchase)
 - Set version to 1.0.1 and date-released in CITATION.cff (@pbchase)
