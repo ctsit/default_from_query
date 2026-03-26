@@ -117,6 +117,10 @@ from (
     ) as dummy;
 ```
 
+#### Draft Preview Mode
+
+This module supports draft preview mode, but data retrieval through SQL queries is of course limited to values that are actually stored in the data table.
+
 ### Testing
 
 A prebuilt test project, SQL queries, and a test procedure are available in [Testing Default From Query](./testing.md)
