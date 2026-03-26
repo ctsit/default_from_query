@@ -82,7 +82,7 @@ ORDER BY instance DESC
 LIMIT 1
 ```
 
-- Values for `record` and `field_name` _must_ be wrapped in quotes if you are _not_ using the substition value for that column value.
+- Values for `record` and `field_name` _must_ be wrapped in quotes if you are _not_ using the substitution value for that column value.
 
 ```sql
 SELECT value
