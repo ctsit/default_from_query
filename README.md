@@ -125,6 +125,26 @@ This module supports draft preview mode, but data retrieval through SQL queries 
 
 A prebuilt test project, SQL queries, and a test procedure are available in [Testing Default From Query](./testing.md)
 
+## Upgrading
+
+### Breaking changes in v1.0.0
+
+The smart variable placeholders used in SQL queries were renamed in v1.0.0. If you have existing queries using the old names, update them before upgrading:
+
+| Old placeholder | New placeholder |
+|-----------------|-----------------|
+| `[project_id]`  | `[project-id]`  |
+| `[record_id]`   | `[record-name]` |
+| `[field_name]`  | `[field-name]`  |
+| `[pid1]`        | `[pid-1]`       |
+| `[pid2]`        | `[pid-2]`       |
+| `[pid3]`        | `[pid-3]`       |
+| `[data-table:pid1]` | `[data-table:pid-1]` |
+| `[data-table:pid2]` | `[data-table:pid-2]` |
+| `[data-table:pid3]` | `[data-table:pid-3]` |
+
+Queries using old placeholder names will silently produce no value after upgrading.
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
