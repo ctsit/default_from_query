@@ -17,8 +17,6 @@ use Records;
 class DefaultFromQuery extends AbstractExternalModule
 {
 
-    const PLACEHOLDER_RECORD_ID = 'This-is-a-placeholder-for-the-real-record-id';
-
     /**
      * @inheritdoc
      */
