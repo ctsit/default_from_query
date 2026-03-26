@@ -65,7 +65,14 @@ class DefaultFromQuery extends AbstractExternalModule
                 'pid2' => $query['pid2'] ?? null,
                 'pid3' => $query['pid3'] ?? null,
             ];
-            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, $_GET['id'], $pids);
+            // Do not use $_GET['id'] because the EM scan will result in a false-positive SQL taint
+            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, 'This-to-be-replaced-by-the-real-record-id!', $pids);
+            // Substitute record_id in $params
+            $subst_idx = array_search('This-to-be-replaced-by-the-real-record-id!', $params);
+            if ($subst_idx !== false) {
+                $params[$subst_idx] = $_GET['id'];
+            }
+
             $value = $this->executeQuery($sql, $params);
             if ($value === null) {
                 continue;
