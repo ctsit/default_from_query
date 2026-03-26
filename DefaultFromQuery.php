@@ -16,6 +16,9 @@ use Records;
  */
 class DefaultFromQuery extends AbstractExternalModule
 {
+
+    const PLACEHOLDER_RECORD_ID = 'This-is-a-placeholder-for-the-real-record-id';
+
     /**
      * @inheritdoc
      */
@@ -66,9 +69,9 @@ class DefaultFromQuery extends AbstractExternalModule
                 'pid3' => $query['pid3'] ?? null,
             ];
             // Do not use $_GET['id'] because the EM scan will result in a false-positive SQL taint
-            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, 'This-to-be-replaced-by-the-real-record-id!', $pids);
+            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, self::PLACEHOLDER_RECORD_ID, $pids);
             // Substitute record_id in $params
-            $subst_idx = array_search('This-to-be-replaced-by-the-real-record-id!', $params);
+            $subst_idx = array_search(self::PLACEHOLDER_RECORD_ID, $params);
             if ($subst_idx !== false) {
                 $params[$subst_idx] = $_GET['id'];
             }
