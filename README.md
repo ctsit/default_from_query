@@ -54,7 +54,7 @@ Queries may reference the following **Smart Variables**, which are substituted w
 | `[event-id]` | The current event id |
 | `[current-instance]` | The current instance number |
 | `[data-table]` | The REDCap data table for the current project (e.g. `redcap_data`). Data tables for other projects may be referenced by using the syntax `[data-table:pid]` where `pid` is a literal project ID or `pid-1`, `pid-2`, or `pid-3`, referencing the 1st, 2nd, or 3rd additional project ID set in the module settings for the query |
-| `[pid-1]`, `[pid-2]`, `[pid-3]` | The project ID configured in the corresponding additional project ID field
+| `[pid-1]`, `[pid-2]`, `[pid-3]` | The project ID configured in the corresponding additional project ID field |
 
 Example:
 
