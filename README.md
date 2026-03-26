@@ -109,8 +109,8 @@ from (
         union
         (
             select max(cast(value as SIGNED)) as max_visitnum
-            from [data-table:other-pid-1] -- the data tables do not match so use a placeholder (set in module settings; alternatively, hard-code as, e.g., [data-table:123])
-            where project_id = 123 -- the project_ids do not match so use a placeholder or explicitly specify that project id
+            from [data-table:pid-1] -- the data tables do not match so use a placeholder (set in module settings; alternatively, hard-code as, e.g., [data-table:123])
+            where project_id = [pid-1] -- the project_ids do not match so use a placeholder (set in module settings; alternatively, hard-code the project id)
                 and field_name = 'some_other_field'
                 and record = [record-name] --- the record name matches the one in the current project
         )

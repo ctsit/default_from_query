@@ -113,8 +113,8 @@ class DefaultFromQuery extends AbstractExternalModule
     }
 
     /**
-     * Substitutes [record_id], [project_id], and [field_name] placeholders in
-     * a SQL string with safe parameterized query markers.
+     * Substitutes smart variable placeholders in a SQL string with safe
+     * parameterized query markers.
      *
      * Each placeholder occurrence is replaced with a ? and the corresponding
      * value is appended to the returned params array in order, making the
@@ -122,9 +122,10 @@ class DefaultFromQuery extends AbstractExternalModule
      * placeholder is an exception: it is substituted directly as a table name
      * and cannot be bound as a parameter.
      *
-     * Supported placeholders: [record_id], [project_id], [field_name],
-     * [pid1], [pid2], [pid3], [data-table], [data-table:pid1],
-     * [data-table:pid2], [data-table:pid3].
+     * Supported placeholders: [project-id], [field-name], [record-name],
+     * [record-dag-id], [event-id], [current-instance], [pid-1], [pid-2],
+     * [pid-3], [data-table], [data-table:N], [data-table:pid-1],
+     * [data-table:pid-2], [data-table:pid-3].
      *
      * @param string $sql            The raw SQL string containing placeholders.
      * @param int    $project_id     The current REDCap project ID.
@@ -149,7 +150,7 @@ class DefaultFromQuery extends AbstractExternalModule
         );
         foreach (['pid-1', 'pid-2', 'pid-3'] as $key) {
             if (!empty($pids[$key])) {
-                $sql = str_replace("[data-table:$key]", $this->getDataTable($pids[$key]), $sql);
+                $sql = str_replace("[data-table:$key]", $this->framework->getDataTable($pids[$key]), $sql);
             }
         }
 
