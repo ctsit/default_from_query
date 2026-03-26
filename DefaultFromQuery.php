@@ -22,16 +22,17 @@ class DefaultFromQuery extends AbstractExternalModule
     /**
      * @inheritdoc
      */
-    function redcap_every_page_top($project_id)
+    function redcap_data_entry_form_top($project_id, $record, $instrument, $event_id, $group_id, $repeat_instance)
     {
-        if (!$project_id) {
-            return;
-        }
-
-        if (PAGE == 'DataEntry/index.php' && !empty($_GET['id'])) {
-            if (!$this->currentFormHasData()) {
-                $this->setDefaultValues($project_id);
-            }
+        if ($record === null || !$this->currentFormHasData()) {
+            $this->setDefaultValues(
+                $project_id,
+                $record,
+                $instrument,
+                $event_id,
+                $group_id,
+                $repeat_instance,
+            );
         }
     }
 
@@ -43,15 +44,30 @@ class DefaultFromQuery extends AbstractExternalModule
      * of the @DEFAULT action tag so REDCap renders it as the field default.
      *
      * @param int $project_id
+     * @param string $record
+     * @param string $instrument
+     * @param int $event_id
+     * @param int $group_id
+     * @param int $repeat_instance
      */
-    function setDefaultValues($project_id)
+    function setDefaultValues($project_id, $record, $instrument, $event_id, $group_id, $repeat_instance)
     {
         global $Proj;
 
-        $fields = empty($_GET['page']) ? $Proj->metadata : $Proj->forms[$_GET['page']]['fields'];
+        // Support draft preview mode
+        $fields = $Proj->getFormFields($instrument);
+        $metadata = $Proj->getMetadata();
+        $draft_preview_enabled = ($GLOBALS["draft_preview_enabled"] ?? false);
+        $update_misc = function ($field, $value) use ($Proj, $draft_preview_enabled) {
+            if ($draft_preview_enabled) {
+                $Proj->metadata_temp[$field]['misc'] = $value;
+            } else {
+                $Proj->metadata[$field]['misc'] = $value;
+            }
+        };
 
-        foreach (array_keys($fields) as $field_name) {
-            $misc = $Proj->metadata[$field_name]['misc'];
+        foreach ($fields as $field_name) {
+            $misc = $metadata[$field_name]['misc'];
 
             $query_name = Form::getValueInQuotesActionTag($misc, '@DEFAULT-FROM-QUERY');
             if (empty($query_name)) {
@@ -63,25 +79,21 @@ class DefaultFromQuery extends AbstractExternalModule
                 continue;
             }
 
+            // Optional other project references
             $pids = [
                 'pid1' => $query['pid1'] ?? null,
                 'pid2' => $query['pid2'] ?? null,
                 'pid3' => $query['pid3'] ?? null,
             ];
-            // Do not use $_GET['id'] because the EM scan will result in a false-positive SQL taint
-            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, self::PLACEHOLDER_RECORD_ID, $pids);
-            // Substitute record_id in $params
-            $subst_idx = array_search(self::PLACEHOLDER_RECORD_ID, $params);
-            if ($subst_idx !== false) {
-                $params[$subst_idx] = $_GET['id'];
-            }
+
+            [$sql, $params] = $this->pipeSqlVariables($query['query_sql'], $project_id, $field_name, $record, $group_id, $event_id, $repeat_instance, $pids);
 
             $value = $this->executeQuery($sql, $params);
             if ($value === null) {
                 continue;
             }
 
-            $Proj->metadata[$field_name]['misc'] = $this->overrideActionTag('@DEFAULT', $value, $misc);
+            $update_misc($field_name, $this->overrideActionTag('@DEFAULT', $value, $misc));
         }
     }
 
@@ -116,35 +128,49 @@ class DefaultFromQuery extends AbstractExternalModule
      * [pid1], [pid2], [pid3], [data-table], [data-table:pid1],
      * [data-table:pid2], [data-table:pid3].
      *
-     * @param string $sql        The raw SQL string containing placeholders.
-     * @param int    $project_id The current REDCap project ID.
-     * @param string $field_name The field name being processed.
-     * @param string $record_id  The current record ID (from $_GET['id']).
-     * @param array  $pids       Optional map of pid1/pid2/pid3 to project IDs.
+     * @param string $sql            The raw SQL string containing placeholders.
+     * @param int    $project_id     The current REDCap project ID.
+     * @param string $field_name     The field name being processed.
+     * @param string $record_name    The current record ID. Note: Not yet existing (i.e., new) records will have a record id of null.
+     * @param int    $record_dag_id  The DAG id.
+     * @param int    $event_id       The event id.
+     * @param int    $instance       The instance number.
+     * @param array  $pids           The array of other PIDs
      * @return array{0: string, 1: array} A tuple of [piped SQL, bound values].
      */
-    function pipeSqlVariables($sql, $project_id, $field_name, $record_id, $pids = [])
+    function pipeSqlVariables($sql, $project_id, $field_name, $record_name, $record_dag_id, $event_id, $instance, $pids)
     {
         // Table names cannot be bound parameters; substitute them directly.
-        $sql = str_replace('[data-table]', $this->getDataTable($project_id), $sql);
-        foreach (['pid1', 'pid2', 'pid3'] as $key) {
+        $sql = preg_replace_callback(
+            '/\[data-table(?::(\d+))?\]/',
+            function ($m) use ($project_id) {
+                $pid = isset($m[1]) && $m[1] !== '' ? (int)$m[1] : $project_id;
+                return $this->framework->getDataTable($pid);
+            },
+            $sql
+        );
+        foreach (['pid-1', 'pid-2', 'pid-3'] as $key) {
             if (!empty($pids[$key])) {
                 $sql = str_replace("[data-table:$key]", $this->getDataTable($pids[$key]), $sql);
             }
         }
 
         $map = [
-            'project_id' => $project_id,
-            'field_name' => $field_name,
-            'record_id'  => $record_id,
-            'pid1'       => $pids['pid1'] ?? null,
-            'pid2'       => $pids['pid2'] ?? null,
-            'pid3'       => $pids['pid3'] ?? null,
+            'project-id'       => $project_id,
+            'field-name'       => $field_name,
+            'record-name'      => $record_name,
+            'record-dag-id'    => $record_dag_id,
+            'event-id'         => $event_id,
+            'current-instance' => $instance,
+            'pid-1'            => $pids[0] ?? null,
+            'pid-2'            => $pids[1] ?? null,
+            'pid-3'            => $pids[2] ?? null,
         ];
+        $pattern = '/\[(' . implode('|', array_keys($map)) . ')\]/';
 
         $params = [];
         $piped = preg_replace_callback(
-            '/\[(project_id|field_name|record_id|pid1|pid2|pid3)\]/',
+            $pattern,
             function ($matches) use ($map, &$params) {
                 $params[] = $map[$matches[1]];
                 return '?';
@@ -177,8 +203,7 @@ class DefaultFromQuery extends AbstractExternalModule
             }
             $row = $result->fetch_row();
             return $row ? (string) $row[0] : null;
-        }
-        catch (\Throwable $e) {
+        } catch (\Throwable $e) {
             return null;
         }
     }
