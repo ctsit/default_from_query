@@ -1,3 +1,10 @@
+# default_from_query 2.0.1 (released 2026-04-03)
+
+## Other
+- Add NOTICE file and README acknowledgment crediting Auto Populate Fields as the upstream source (@pbchase)
+- Add reference to Auto Populate Fields in CITATION.cff (@pbchase)
+- Correct CITATION.cff authors to reflect actual contributors to this project (@pbchase)
+
 # default_from_query 2.0.0 (released 2026-03-26)
 
 ## Breaking changes

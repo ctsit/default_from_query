@@ -22,22 +22,6 @@ authors:
     given-names: Melissa
     affiliation: University of Florida
     orcid: https://orcid.org/0000-0003-0447-3270
-  - family-names: Bember
-    given-names: Tiago
-    affiliation: Howard Hughes Medical Institute
-  - family-names: Chesney
-    given-names: Kyle
-    affiliation: University of Florida
-    orcid: https://orcid.org/0000-0002-0479-7251
-  - family-names: Kamma
-    given-names: Sai Pavan
-    email: saipavankamma@ufl.edu
-    affiliation: University of Florida
-    orcid: https://orcid.org/0009-0004-4619-0409
-  - family-names: Bentz
-    given-names: Michael
-    affiliation: University of Florida
-    orcid: https://orcid.org/0000-0002-5790-4268
   - given-names: Günther A.
     family-names: Rezniczek
     affiliation: UK Ruhr-Universität Bochum | Marien Hospital Herne
@@ -60,7 +44,15 @@ keywords:
   - "redcap external module"
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.19225884
+    value: 10.5281/zenodo.19410243
 license: Apache-2.0
-version: 2.0.0
-date-released: '2026-03-26'
+references:
+  - type: software
+    title: "ctsit/auto_populate_fields: Auto-populate Fields"
+    authors:
+      - name: University of Florida
+    doi: 10.5281/zenodo.13650776
+    notes: >-
+      Default From Query is derived from this software.
+version: 2.0.1
+date-released: '2026-04-03'

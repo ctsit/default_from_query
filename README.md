@@ -145,6 +145,10 @@ The smart variable placeholders used in SQL queries were renamed in v2.0.0. If y
 
 Queries using old placeholder names will silently produce no value after upgrading to v2.0.0.
 
+## Acknowledgments
+
+This module is derived from [Auto Populate Fields](https://github.com/ctsit/auto_populate_fields), a REDCap External Module developed at the University of Florida. We thank the contributors of that project for their foundational work.
+
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
